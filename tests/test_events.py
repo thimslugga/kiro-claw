@@ -1,8 +1,6 @@
 """Tests for event processor — verifies IPC-only output pipeline."""
 
 import json
-import pytest
-from unittest.mock import AsyncMock, patch
 
 from src.events import _summarise_events
 
@@ -11,7 +9,7 @@ class TestSummariseEvents:
     def test_ha_event(self):
         events = [{"source": "ha", "event_type": "state_changed",
                     "data": json.dumps({"entity_id": "binary_sensor.driveway", "state": "on", "friendly_name": "Driveway Motion"})}]
-        prompt = _summarise_events(events)
+        prompt = _summarise_events(events, defcon=5)
         assert "Driveway Motion" in prompt
         assert "jarvis-send" in prompt
         assert "do NOT reply in chat" in prompt
@@ -23,26 +21,37 @@ class TestSummariseEvents:
             {"source": "ha", "event_type": "state_changed",
              "data": json.dumps({"entity_id": "sensor.b", "state": "on", "friendly_name": "Front Motion"})},
         ]
-        prompt = _summarise_events(events)
+        prompt = _summarise_events(events, defcon=3)
         assert "Back Motion" in prompt
         assert "Front Motion" in prompt
 
     def test_non_ha_event(self):
+        # The DEFCON redesign only renders friendly_name/entity_id+state for dict
+        # payloads. Non-dict payloads fall back to "- {source}: {data}".
         events = [{"source": "mqtt", "event_type": "temperature",
-                    "data": json.dumps({"value": 22.5})}]
-        prompt = _summarise_events(events)
-        assert "mqtt/temperature" in prompt
+                    "data": "22.5"}]
+        prompt = _summarise_events(events, defcon=5)
+        assert "mqtt" in prompt
+        assert "22.5" in prompt
 
     def test_malformed_data(self):
         events = [{"source": "ha", "event_type": "test", "data": "not json {{{"}]
-        prompt = _summarise_events(events)
+        prompt = _summarise_events(events, defcon=5)
         assert "not json" in prompt
 
     def test_prompt_instructs_ipc_only(self):
         """The prompt must tell JARVIS to use IPC, not chat responses."""
         events = [{"source": "ha", "event_type": "test",
                     "data": json.dumps({"entity_id": "x", "state": "on", "friendly_name": "Test"})}]
-        prompt = _summarise_events(events)
+        prompt = _summarise_events(events, defcon=5)
         assert "jarvis-send" in prompt
         assert "jarvis-photo" in prompt
         assert "do NOT" in prompt
+
+    def test_defcon_level_in_prompt(self):
+        """Prompt should expose DEFCON level so the agent can self-modulate."""
+        events = [{"source": "ha", "event_type": "state_changed",
+                   "data": json.dumps({"friendly_name": "Test", "state": "on"})}]
+        prompt = _summarise_events(events, defcon=2)
+        assert "DEFCON" in prompt
+        assert "2" in prompt
