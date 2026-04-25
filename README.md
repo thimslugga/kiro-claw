@@ -1,6 +1,13 @@
 # Kiro-Claw 🦞
 
-A Telegram bot that bridges messages to [JARVIS](https://cli.kiro.dev/) (Kiro CLI agent) running inside a persistent Docker container. Includes task scheduling, proactive messaging, event ingestion, and live response streaming.
+A chat bot that bridges messages to [JARVIS](https://cli.kiro.dev/) (Kiro CLI agent) running inside a persistent Docker container. Includes task scheduling, proactive messaging, event ingestion, and live response streaming.
+
+Two messaging backends are supported, selectable via `MESSAGING_BACKEND`:
+
+- **Discord** (`discord`) — uses `discord.py`. Channel IDs are 64-bit snowflakes. Commands use the configured `DISCORD_COMMAND_PREFIX` (default `!`).
+- **Telegram** (`telegram`) — uses `python-telegram-bot`. Chat IDs are integers. Commands use `/` prefix.
+
+The rest of the system (container, scheduler, IPC, webhook, event processor) is messaging-agnostic — backends sit behind the `MessagingAdapter` interface in `src/messaging/`.
 
 ## Architecture
 
@@ -87,12 +94,12 @@ docker build -t kiro-claw-agent container/
 
 | Command | Description |
 |---------|-------------|
-| `/ping` | Health check |
-| `/chatid` | Show current chat ID |
-| `/tasks` | List active scheduled tasks |
-| `/cancel <task_id>` | Cancel a scheduled task |
-| Any message (private chat) | Forwarded to JARVIS agent |
-| `@jarvis <message>` (group) | Trigger prefix for group chats |
+| `/ping` (Telegram) / `!ping` (Discord) | Health check |
+| `/chatid` / `!chatid` | Show current chat / channel ID |
+| `/tasks` / `!tasks` | List active scheduled tasks |
+| `/cancel <task_id>` / `!cancel <task_id>` | Cancel a scheduled task |
+| Any message (DM) | Forwarded to JARVIS agent |
+| `@jarvis <message>` (group / guild channel) | Trigger prefix for group chats |
 
 ## Event Webhook
 
@@ -235,12 +242,18 @@ Edit `.env` (see `.env.example`):
 
 | Variable | Description |
 |----------|-------------|
-| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather |
-| `TRIGGER_PATTERN` | Trigger word for group chats (default: `@jarvis`) |
+| `MESSAGING_BACKEND` | `telegram` or `discord` (default: `telegram`) |
+| `TELEGRAM_BOT_TOKEN` | Bot token from BotFather (when backend = telegram) |
+| `DISCORD_BOT_TOKEN` | Bot token from the Discord developer portal (when backend = discord) |
+| `DISCORD_COMMAND_PREFIX` | Prefix for Discord commands (default: `!`) |
+| `TRIGGER_PATTERN` | Trigger word for group chats / guild channels (default: `@jarvis`) |
+| `OWNER_USER_ID` | User id whose messages the bot replies to in groups/guilds. If unset, the bot only observes (never replies) in groups. |
+| `DEFAULT_EVENT_CHAT_ID` | Chat / channel id used by the event processor. If unset, event batches are skipped. |
+| `HOME_ASSISTANT_URL` | Base URL for HA, used by `jarvis-photo` (default: `http://homeassistant.local:8123`) |
 | `KIRO_AGENT` | Agent name (default: `JARVIS`) |
 | `CONTAINER_IMAGE` | Agent container image (default: `kiro-claw-agent:latest`) |
 | `CONTAINER_TIMEOUT` | Max response time in seconds (default: `300`) |
-| `ALLOWED_CHAT_IDS` | Comma-separated allowed Telegram chat IDs |
+| `ALLOWED_CHAT_IDS` | Comma-separated allowed chat / channel IDs (string ids; both Telegram and Discord ids fit) |
 | `BRAIN_DIR` | Path to shared brain/memory directory |
 | `PROJECTS` | Comma-separated project paths to mount at `/workspace/projects/` |
 | `EXTRA_HOSTS` | LAN DNS entries: `hostname:ip,hostname:ip` |
@@ -256,8 +269,12 @@ kiro-claw/
 ├── kiro-claw.sh              # Start/stop/status management
 ├── pyproject.toml
 ├── src/
-│   ├── main.py               # Entry point — wires bot + scheduler + IPC + webhook + events
-│   ├── bot.py                # Telegram handlers, message storage
+│   ├── main.py               # Entry point — picks backend + wires loops
+│   ├── handler.py            # Platform-agnostic message + command handling
+│   ├── messaging/            # Adapter layer
+│   │   ├── adapter.py        # MessagingAdapter Protocol + dataclasses
+│   │   ├── telegram_adapter.py
+│   │   └── discord_adapter.py
 │   ├── runner.py             # Docker container lifecycle + streaming
 │   ├── queue.py              # Per-chat async locking
 │   ├── config.py             # Environment config loader

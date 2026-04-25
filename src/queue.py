@@ -3,18 +3,19 @@
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Callable, Awaitable
+from typing import Awaitable, Callable
 
 log = logging.getLogger(__name__)
 
-RunnerFn = Callable[[str, int], Awaitable[str]]
+RunnerFn = Callable[[str, str], Awaitable[str]]
 
 
 class ChatQueue:
     def __init__(self, runner: RunnerFn):
         self._runner = runner
-        self._locks: dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-    async def submit(self, prompt: str, chat_id: int) -> str:
-        async with self._locks[chat_id]:
-            return await self._runner(prompt, chat_id)
+    async def submit(self, prompt: str, chat_id) -> str:
+        cid = str(chat_id)
+        async with self._locks[cid]:
+            return await self._runner(prompt, cid)

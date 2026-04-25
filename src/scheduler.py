@@ -35,7 +35,7 @@ def _next_run(schedule_type: str, schedule_value: str) -> str | None:
     return None  # 'once' — no next run
 
 
-def schedule_task(chat_id: int, prompt: str, schedule_type: str, schedule_value: str) -> str:
+def schedule_task(chat_id, prompt: str, schedule_type: str, schedule_value: str) -> str:
     """Create a scheduled task. Returns task ID."""
     task_id = f"task-{uuid.uuid4().hex[:8]}"
     if schedule_type == "once":
@@ -54,7 +54,7 @@ def schedule_task(chat_id: int, prompt: str, schedule_type: str, schedule_value:
 
     create_task({
         "id": task_id,
-        "chat_id": chat_id,
+        "chat_id": str(chat_id),
         "prompt": prompt,
         "schedule_type": schedule_type,
         "schedule_value": schedule_value,

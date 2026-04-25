@@ -20,7 +20,7 @@ mkdir -p "$IPC_DIR"
 
 FILENAME="task-$(date +%s%N).json"
 cat > "$IPC_DIR/$FILENAME" <<EOF
-{"type": "schedule_task", "chat_id": $CHAT_ID, "schedule_type": "$STYPE", "schedule_value": "$SVALUE", "prompt": $(printf '%s' "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}
+{"type": "schedule_task", "chat_id": "$CHAT_ID", "schedule_type": "$STYPE", "schedule_value": "$SVALUE", "prompt": $(printf '%s' "$PROMPT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}
 EOF
 
 echo "Task scheduled: $FILENAME"

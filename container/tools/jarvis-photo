@@ -8,7 +8,7 @@ ENTITY="$2"
 CAPTION="${3:-}"
 IPC_DIR="/workspace/ipc"
 SCRATCH="/workspace/scratch"
-HA_URL="http://cappucino:8123"
+HA_URL="${HOME_ASSISTANT_URL:-http://homeassistant.local:8123}"
 HA_TOKEN="$MCP_HOME_ASSISTANT_API_ACCESS_TOKEN"
 
 if [ -z "$CHAT_ID" ] || [ -z "$ENTITY" ]; then
@@ -31,7 +31,7 @@ curl -sf -o "$FILEPATH" \
 
 # Queue IPC photo
 cat > "$IPC_DIR/photo_$(date +%s%N).json" << EOF
-{"type":"photo","chat_id":$CHAT_ID,"path":"$FILEPATH","caption":"$CAPTION"}
+{"type":"photo","chat_id":"$CHAT_ID","path":"$FILEPATH","caption":"$CAPTION"}
 EOF
 
 echo "Snapshot queued: $ENTITY -> $FILEPATH"

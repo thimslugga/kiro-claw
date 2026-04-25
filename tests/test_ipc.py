@@ -33,10 +33,24 @@ async def test_process_message(ipc_dir):
     old = ipc.ALLOWED_CHAT_IDS
     ipc.ALLOWED_CHAT_IDS = set()  # allow all
     try:
+        f = _write_ipc(ipc_dir, {"type": "message", "chat_id": "123", "text": "hello"})
+        await ipc._process_file(f, send_fn)
+        send_fn.assert_called_once_with("123", "hello")
+        assert not f.exists()
+    finally:
+        ipc.ALLOWED_CHAT_IDS = old
+
+
+@pytest.mark.asyncio
+async def test_process_message_legacy_int_chat_id(ipc_dir):
+    """Older IPC files still write `chat_id` as a JSON number — must keep working."""
+    send_fn = AsyncMock()
+    old = ipc.ALLOWED_CHAT_IDS
+    ipc.ALLOWED_CHAT_IDS = set()
+    try:
         f = _write_ipc(ipc_dir, {"type": "message", "chat_id": 123, "text": "hello"})
         await ipc._process_file(f, send_fn)
-        send_fn.assert_called_once_with(123, "hello")
-        assert not f.exists()
+        send_fn.assert_called_once_with("123", "hello")
     finally:
         ipc.ALLOWED_CHAT_IDS = old
 
@@ -51,11 +65,11 @@ async def test_process_photo(ipc_dir, tmp_path):
     ipc.ALLOWED_CHAT_IDS = set()
     try:
         f = _write_ipc(ipc_dir, {
-            "type": "photo", "chat_id": 123,
+            "type": "photo", "chat_id": "123",
             "path": str(photo), "caption": "test shot"
         })
         await ipc._process_file(f, send_fn, send_photo_fn)
-        send_photo_fn.assert_called_once_with(123, str(photo), "test shot")
+        send_photo_fn.assert_called_once_with("123", str(photo), "test shot")
         assert not f.exists()
     finally:
         ipc.ALLOWED_CHAT_IDS = old
@@ -75,11 +89,26 @@ async def test_blocked_chat_id(ipc_dir):
     send_fn = AsyncMock()
     # Temporarily set allowed IDs to exclude 999
     old = ipc.ALLOWED_CHAT_IDS
-    ipc.ALLOWED_CHAT_IDS = {123}
+    ipc.ALLOWED_CHAT_IDS = {"123"}
     try:
-        f = _write_ipc(ipc_dir, {"type": "message", "chat_id": 999, "text": "blocked"})
+        f = _write_ipc(ipc_dir, {"type": "message", "chat_id": "999", "text": "blocked"})
         await ipc._process_file(f, send_fn)
         send_fn.assert_not_called()
+    finally:
+        ipc.ALLOWED_CHAT_IDS = old
+
+
+@pytest.mark.asyncio
+async def test_discord_snowflake_chat_id(ipc_dir):
+    """Discord channel IDs are 18+ digit snowflakes that exceed 32-bit int range."""
+    send_fn = AsyncMock()
+    old = ipc.ALLOWED_CHAT_IDS
+    ipc.ALLOWED_CHAT_IDS = set()
+    try:
+        snowflake = "1234567890123456789"
+        f = _write_ipc(ipc_dir, {"type": "message", "chat_id": snowflake, "text": "hi"})
+        await ipc._process_file(f, send_fn)
+        send_fn.assert_called_once_with(snowflake, "hi")
     finally:
         ipc.ALLOWED_CHAT_IDS = old
 

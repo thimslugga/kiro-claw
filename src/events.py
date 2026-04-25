@@ -9,13 +9,13 @@ import asyncio
 import json
 import logging
 
+from .config import DEFAULT_EVENT_CHAT_ID
 from .db import get_unprocessed_events, mark_event_processed
 from .runner import run_in_container
 
 log = logging.getLogger(__name__)
 
 POLL_INTERVAL = 5
-DEFAULT_CHAT_ID = 72911340
 BATCH_WINDOW = 10
 
 
@@ -71,10 +71,13 @@ async def event_processor_loop(send_fn):
             log.info("Routing %d event(s) to JARVIS container (IPC-only)", len(events))
 
             try:
-                result = await run_in_container(prompt, DEFAULT_CHAT_ID)
-                # Log but do NOT send to Telegram — IPC handles all output
-                if result:
-                    log.debug("Event container response (discarded): %s", result[:200])
+                if not DEFAULT_EVENT_CHAT_ID:
+                    log.warning("DEFAULT_EVENT_CHAT_ID not set — skipping event batch")
+                else:
+                    result = await run_in_container(prompt, DEFAULT_EVENT_CHAT_ID)
+                    # Log but do NOT send to chat — IPC handles all output
+                    if result:
+                        log.debug("Event container response (discarded): %s", result[:200])
             except Exception as e:
                 log.error("Container failed on event batch: %s", e)
 

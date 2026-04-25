@@ -2,20 +2,22 @@
 
 The container can write JSON files to /workspace/ipc/ (mounted from data/ipc/).
 This enables two capabilities:
-  1. Proactive messaging: container sends messages to Telegram unprompted
+  1. Proactive messaging: container sends messages to chat unprompted
   2. Task scheduling: container creates/cancels scheduled tasks
+
+`chat_id` is treated as a string throughout to support both Telegram numeric
+ids and Discord snowflakes.
 """
 
 import asyncio
 import json
 import logging
-import os
 import time
 from pathlib import Path
 
 from .config import ALLOWED_CHAT_IDS
-from .scheduler import schedule_task
 from .db import delete_task
+from .scheduler import schedule_task
 
 log = logging.getLogger(__name__)
 
@@ -23,8 +25,8 @@ IPC_DIR = Path(__file__).parent.parent / "data" / "ipc"
 POLL_INTERVAL = 2  # seconds
 
 
-def _is_allowed(chat_id: int) -> bool:
-    return not ALLOWED_CHAT_IDS or chat_id in ALLOWED_CHAT_IDS
+def _is_allowed(chat_id: str) -> bool:
+    return not ALLOWED_CHAT_IDS or str(chat_id) in ALLOWED_CHAT_IDS
 
 
 async def _process_file(filepath: Path, send_fn, send_photo_fn=None):
@@ -36,14 +38,14 @@ async def _process_file(filepath: Path, send_fn, send_photo_fn=None):
         if msg_type == "message":
             chat_id = data.get("chat_id")
             text = data.get("text")
-            if chat_id and text and _is_allowed(int(chat_id)):
-                await send_fn(int(chat_id), text)
+            if chat_id is not None and text and _is_allowed(chat_id):
+                await send_fn(str(chat_id), text)
                 log.info("IPC message sent to %s", chat_id)
             else:
                 log.warning("IPC message blocked — invalid or unauthorized chat_id: %s", chat_id)
 
         elif msg_type == "schedule_task":
-            chat_id = int(data["chat_id"])
+            chat_id = str(data["chat_id"])
             if _is_allowed(chat_id):
                 task_id = schedule_task(
                     chat_id=chat_id,
@@ -64,8 +66,8 @@ async def _process_file(filepath: Path, send_fn, send_photo_fn=None):
             # Translate container path to host path
             if photo_path and photo_path.startswith("/workspace/scratch/"):
                 photo_path = str(IPC_DIR.parent / "scratch" / photo_path.split("/workspace/scratch/")[1])
-            if chat_id and photo_path and _is_allowed(int(chat_id)):
-                await send_photo_fn(int(chat_id), photo_path, caption)
+            if chat_id is not None and photo_path and _is_allowed(chat_id):
+                await send_photo_fn(str(chat_id), photo_path, caption)
                 log.info("IPC photo sent to %s: %s", chat_id, photo_path)
 
         else:

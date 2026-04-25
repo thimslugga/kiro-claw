@@ -8,7 +8,16 @@ import re
 import tempfile
 from pathlib import Path
 
-from .config import CONTAINER_IMAGE, CONTAINER_TIMEOUT, KIRO_AGENT, BRAIN_DIR, EXTRA_HOSTS, MCP_SECRETS, PROJECTS
+from .config import (
+    BRAIN_DIR,
+    CONTAINER_IMAGE,
+    CONTAINER_TIMEOUT,
+    EXTRA_HOSTS,
+    HOME_ASSISTANT_URL,
+    KIRO_AGENT,
+    MCP_SECRETS,
+    PROJECTS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +117,9 @@ async def _ensure_container():
     with os.fdopen(env_fd, "w") as f:
         for key, val in MCP_SECRETS.items():
             f.write(f"{key}={val}\n")
+        # Forward the HA base URL so jarvis-photo can reach it.
+        if HOME_ASSISTANT_URL:
+            f.write(f"HOME_ASSISTANT_URL={HOME_ASSISTANT_URL}\n")
     os.chmod(_env_path, 0o600)
     cmd.insert(-1, "--env-file")
     cmd.insert(-1, _env_path)
@@ -128,7 +140,7 @@ async def _ensure_container():
             return
 
 
-async def stream_from_container(prompt: str, chat_id: int):
+async def stream_from_container(prompt: str, chat_id: str | int):
     """Async generator — yields cleaned lines as they stream from the container."""
     global _first_message
 
@@ -144,7 +156,7 @@ async def stream_from_container(prompt: str, chat_id: int):
             "prompt": prompt,
             "agent": KIRO_AGENT,
             "resume": not _first_message,
-            "chat_id": chat_id,
+            "chat_id": str(chat_id),
         })
         _first_message = False
 
@@ -164,7 +176,7 @@ async def stream_from_container(prompt: str, chat_id: int):
             yield f"Container error: {e}"
 
 
-async def run_in_container(prompt: str, chat_id: int) -> str:
+async def run_in_container(prompt: str, chat_id: str | int) -> str:
     """Non-streaming wrapper — collects all lines into one response."""
     lines = []
     async for line in stream_from_container(prompt, chat_id):

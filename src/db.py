@@ -1,9 +1,40 @@
-"""SQLite database — messages, events, tasks."""
+"""SQLite database — messages, events, tasks.
 
+`chat_id` is stored as TEXT so both Telegram numeric IDs and Discord snowflakes
+fit without overflow. Existing INTEGER columns are migrated in place on
+startup.
+"""
+
+import logging
 import sqlite3
 from pathlib import Path
 
+log = logging.getLogger(__name__)
+
 DB_PATH = Path(__file__).parent.parent / "data" / "kiro-claw.db"
+
+
+def _column_type(db: sqlite3.Connection, table: str, column: str) -> str | None:
+    rows = db.execute(f"PRAGMA table_info({table})").fetchall()
+    for r in rows:
+        if r["name"] == column:
+            return (r["type"] or "").upper()
+    return None
+
+
+def _migrate_chat_id_to_text(db: sqlite3.Connection) -> None:
+    """If `messages.chat_id` or `tasks.chat_id` is INTEGER, rewrite to TEXT in place."""
+    for table in ("messages", "tasks"):
+        ctype = _column_type(db, table, "chat_id")
+        if ctype is None:
+            continue  # table will be created fresh below
+        if "INT" in ctype:
+            log.info("Migrating %s.chat_id from %s to TEXT", table, ctype)
+            # SQLite's column-type change requires table rewrite. Since SQLite
+            # actually permits any type per row, the cheapest path is just
+            # casting existing rows to text.
+            db.execute(f"UPDATE {table} SET chat_id = CAST(chat_id AS TEXT)")
+    db.commit()
 
 
 def _conn() -> sqlite3.Connection:
@@ -12,9 +43,9 @@ def _conn() -> sqlite3.Connection:
     db.row_factory = sqlite3.Row
     db.execute("""CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id INTEGER NOT NULL,
+        chat_id TEXT NOT NULL,
         sender TEXT,
-        sender_id INTEGER,
+        sender_id TEXT,
         content TEXT NOT NULL,
         timestamp TEXT NOT NULL,
         is_bot INTEGER DEFAULT 0
@@ -32,7 +63,7 @@ def _conn() -> sqlite3.Connection:
     db.execute("CREATE INDEX IF NOT EXISTS idx_evt_proc ON events(processed, timestamp)")
     db.execute("""CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
-        chat_id INTEGER NOT NULL,
+        chat_id TEXT NOT NULL,
         prompt TEXT NOT NULL,
         schedule_type TEXT NOT NULL,
         schedule_value TEXT NOT NULL,
@@ -51,6 +82,7 @@ def _conn() -> sqlite3.Connection:
         error TEXT
     )""")
     db.commit()
+    _migrate_chat_id_to_text(db)
     return db
 
 
@@ -59,7 +91,7 @@ def create_task(task: dict) -> str:
     db.execute(
         "INSERT INTO tasks (id, chat_id, prompt, schedule_type, schedule_value, next_run, status, created_at) "
         "VALUES (:id, :chat_id, :prompt, :schedule_type, :schedule_value, :next_run, :status, :created_at)",
-        task,
+        {**task, "chat_id": str(task["chat_id"])},
     )
     db.commit()
     return task["id"]
@@ -73,9 +105,11 @@ def get_due_tasks() -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def get_tasks_for_chat(chat_id: int) -> list[dict]:
+def get_tasks_for_chat(chat_id) -> list[dict]:
     db = _conn()
-    rows = db.execute("SELECT * FROM tasks WHERE chat_id=? AND status='active'", (chat_id,)).fetchall()
+    rows = db.execute(
+        "SELECT * FROM tasks WHERE chat_id=? AND status='active'", (str(chat_id),)
+    ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -106,19 +140,19 @@ def log_run(task_id: str, run_at: str, duration_ms: int, status: str, result: st
 
 # --- Messages ---
 
-def store_message(chat_id: int, sender: str, sender_id: int, content: str, timestamp: str, is_bot: bool = False):
+def store_message(chat_id, sender: str, sender_id, content: str, timestamp: str, is_bot: bool = False):
     db = _conn()
     db.execute(
         "INSERT INTO messages (chat_id, sender, sender_id, content, timestamp, is_bot) VALUES (?,?,?,?,?,?)",
-        (chat_id, sender, sender_id, content, timestamp, 1 if is_bot else 0),
+        (str(chat_id), sender, str(sender_id), content, timestamp, 1 if is_bot else 0),
     )
     db.commit()
 
 
-def get_recent_messages(chat_id: int, limit: int = 50) -> list[dict]:
+def get_recent_messages(chat_id, limit: int = 50) -> list[dict]:
     db = _conn()
     rows = db.execute(
-        "SELECT * FROM messages WHERE chat_id=? ORDER BY timestamp DESC LIMIT ?", (chat_id, limit)
+        "SELECT * FROM messages WHERE chat_id=? ORDER BY timestamp DESC LIMIT ?", (str(chat_id), limit)
     ).fetchall()
     return [dict(r) for r in reversed(rows)]
 
